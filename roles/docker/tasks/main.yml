@@ -1,0 +1,7 @@
+# Ensure login to dockerhub and configured docker daemon
+---
+- name: logs into dockerhub
+  shell: |
+      docker login \
+        -u {{ secret.service.docker.username }} \
+        -p {{ secret.service.docker.password }}
