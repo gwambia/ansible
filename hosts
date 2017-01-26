@@ -1,2 +1,37 @@
 [master]
 192.168.1.229 ansible_user=christian
+
+## DIST ###################################################
+
+[ubuntu:children]
+consul
+
+[mac:children]
+local
+
+## OS #####################################################
+
+[osx:children]
+local
+
+[trusty:children]
+ci-master
+monitoring
+
+[xenial:children]
+escrow
+ci-slave
+
+## CLUSTER ################################################
+
+[consul]
+consul-0 ansible_host=192.168.1.229 ansible_user=christian
+consul-1 ansible_host=192.168.1.230 ansible_user=christian
+consul-2 ansible_host=192.168.1.231 ansible_user=christian
+consul-3 ansible_host=192.168.1.232 ansible_user=christian
+
+## ENV ####################################################
+
+[staging]
+[development]
+[production]

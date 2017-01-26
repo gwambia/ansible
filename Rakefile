@@ -30,16 +30,27 @@ namespace :ansible do
   task :nodes, [ :inventory ] do | t, arguments |
     port = 2221
     content = File.read arguments[:inventory]
-    ( content.scan /^.+?ansible_host.+$/ ).each do | line |
-      name = ( line.match /^(?<name>.+?)\s/ )['name']
-      host = ( line.match r = /ansible_host\s*?=\s*?(?<host>.+?)(\s|$)/ )['host']
+    matches = ( content.scan /^.+?ansible_host.+$/ )
 
+    %x{
+      docker network rm ansible.gwambia
+      docker network create -d bridge --subnet 172.25.0.0/16 ansible.gwambia
+    }
+
+    # first we iterate through matches so that we can get host
+    # name and address
+    hosts = matches.map do | line |
+      {
+        name: ( line.match /^(?<name>.+?)\s/ )['name'],
+        address: ( line.match r = /ansible_host\s*?=\s*?(?<host>.+?)(\s|$)/ )['host'],
+      }
+    end
+    hosts.each do | host |
       # replace host with loopback address and port
-      replace = line.sub /#{ r }/, " ansible_host=127.0.0.1 ansible_port=#{ port += 1 } "
-      content.sub! line, replace
+      content.gsub! /ansible_host=#{ host[:address] }/, " ansible_host=127.0.0.1 ansible_port=#{ port += 1 } "
 
       # determine ubuntu version based upon group membership
-      groups = `rake ansible:groups[#{ name }]`.split "\n"
+      groups = `rake ansible:groups[#{ host[:name] }]`.split "\n"
       tag = groups.include?( "xenial" ) && "16.04" || "14.04.5"
 
       # launch docker container
@@ -53,6 +64,7 @@ namespace :ansible do
             --publish #{ port }:22 \
             --volume $SSH_AUTH_SOCK:/ssh-agent \
             --env SSH_AUTH_SOCK="$SSH_AUTH_SOCK" \
+            --network ansible.gwambia \
             ubuntu:#{ tag } /bin/bash -l
 
           docker exec #{ name } bash -c "
@@ -66,11 +78,13 @@ namespace :ansible do
           docker exec #{ name } bash -c "
             mkdir ~/.ssh; echo '$pub' >> ~/.ssh/authorized_keys
           "
-          exit 0
         }
       end
     end
     Process.wait
+
+    puts content
+    exit
 
     # finally write inventory.development
     File.write "#{ arguments[:inventory] }.development", content
