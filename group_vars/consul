@@ -18,8 +18,24 @@ service:
       /var/consul:
         mode: "0644"
     files:
-      /opt/consul/consul.zip:
-        source: https://releases.hashicorp.com/consul/0.7.2/consul_0.7.2_linux_amd64.zip
+      /etc/consul.d/config.json:
+    docker:
+      image: consul
+      subnet: 172.17.1.0/24
+      tag: 0.7.3
+      nodes: 3
+      command: agent -server -dev -bootstrap -ui -client=0.0.0.0 -bind=0.0.0.0
+      mounts:
+        /etc/consul.d:/consul/config
+  docker:
+    labels:
+
+
+we need:
+  labels for node
+  docker network create
+  docker service create
+
 
   git:
     organization: gwambia

@@ -1,6 +1,10 @@
 #!/usr/bin/env ruby
 require "rake"
 
+## requires ###############################################
+
+require "yaml"
+
 ## methods ################################################
 
 # executes shell command w/login profile
@@ -27,9 +31,10 @@ namespace :ansible do
   end
 
   desc "generates docker nodes from inventory file"
-  task :nodes, [ :inventory ] do | t, arguments |
+  task :nodes, [ :inventory ] do | _, arguments |
     port = 2221
-    content = File.read arguments[:inventory]
+    inventory ||= arguments[:inventory]
+    content = File.read inventory
     matches = ( content.scan /^.+?ansible_host.+$/ )
 
     %x{
@@ -46,6 +51,9 @@ namespace :ansible do
       }
     end
     hosts.each do | host |
+      facts = YAML.load `rake ansible:facts[#{ host }]`
+      puts facts
+      exit
       # replace host with loopback address and port
       content.gsub! /ansible_host=#{ host[:address] }/, " ansible_host=127.0.0.1 ansible_port=#{ port += 1 } "
 
@@ -87,6 +95,6 @@ namespace :ansible do
     exit
 
     # finally write inventory.development
-    File.write "#{ arguments[:inventory] }.development", content
+    File.write "#{ inventory }.development", content
   end
 end
