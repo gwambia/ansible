@@ -4,6 +4,14 @@ require "rake"
 ## requires ###############################################
 
 require "yaml"
+require "capybara"
+require "capybara/dsl"
+require "selenium-webdriver"
+
+## constants ##############################################
+
+TIMEOUT = 300
+PATH_DOWNLOADS = "/tmp/downloads"
 
 ## methods ################################################
 
@@ -12,7 +20,76 @@ def bash cmd
   %x{ bash --login -c "#{ cmd }" }
 end
 
+def downloads
+  Dir["/tmp/downloads/*"]
+end
+
+def downloaded?
+  !downloading? && downloads.any?
+end
+
+def downloading?
+  downloads.grep(/\.crdownload$/).any?
+end
+
+def clear_downloads
+  FileUtils.rm_f(downloads)
+end
+
 ## tasks ##################################################
+
+task :init do
+  @__init_capybara__ ||= begin
+    include Capybara::DSL
+    Capybara.register_driver :selenium do |app|
+      Capybara::Selenium::Driver.new(
+        app,
+        :browser => :chrome,
+        #url: "http://localhost:4444/wd/hub",
+        prefs: {
+          download: {
+            default_directory: '/tmp/downloads'
+          }
+        }
+      )
+    end
+    Capybara.javascript_driver = :selenium
+    Capybara.run_server = false
+    Capybara.current_driver = :selenium
+  end
+end
+
+namespace :wordpress do
+  desc "exports a wordpress site"
+  task :export, [ :host, :user, :password ] => [ :init ] do | _, arguments |
+    # spinup standalone container
+    bash %{
+      mkdir -p /tmp/selenium 2>/dev/null
+
+      docker swarm init 2>/dev/null
+      #docker service create \
+      #  --replicas 1 \
+      #  --name selenium \
+      #  --publish 4444:4444 \
+      #  --publish 5901:5900 \
+      #  --mount type=tmpfs,destination=/dev/shm \
+      #    selenium/standalone-chrome-debug:3.0.1-fermium 2>/dev/null
+
+      mkdir -p /tmp/downloads 2>/dev/null
+    }
+    clear_downloads
+
+    visit "http://#{ arguments[:host] }/wp-admin/export.php"
+    fill_in :user_login, with: arguments[:user]
+    fill_in :user_pass, with: arguments[:password]
+    click_button "wp-submit"
+    click_button "submit"
+
+    Timeout.timeout(TIMEOUT) do
+      sleep 0.1 until downloaded?
+    end
+  end
+end
 
 namespace :ansible do
   desc "shows hiera for host"
