@@ -7,6 +7,7 @@ require "yaml"
 require "capybara"
 require "capybara/dsl"
 require "selenium-webdriver"
+require "net/http"
 
 ## constants ##############################################
 
@@ -60,6 +61,77 @@ task :init do
 end
 
 namespace :wordpress do
+  desc "import a wordpress site"
+  task :import, [ :host, :user, :password, :import ] => [ :init ] do | _, arguments |
+    # spinup standalone container
+    bash %{
+      mkdir -p /tmp/selenium 2>/dev/null
+
+      docker swarm init 2>/dev/null
+      docker service create \
+      --replicas 1 \
+      --name mysql \
+      --env MYSQL_ROOT_PASSWORD=mypassword \
+      --env MYSQL_DATABASE=wordpress \
+      --mount type=volume,source=mysql,destination=/var/lib/mysql \
+      --publish 3306:3306 \
+        mysql:5.7 2>/dev/null
+
+      mysql \
+        -uroot \
+        -P 3306 \
+        -h 127.0.0.1 \
+        -pmypassword \
+        -e '
+          DROP DATABASE IF EXISTS wordpress_export;
+          CREATE DATABASE wordpress_export
+        '
+
+      docker service rm wordpress_export
+      docker service create \
+        --replicas 1 \
+        --name wordpress_export \
+        -e WORDPRESS_DB_HOST=192.168.1.97 \
+        -e WORDPRESS_DB_PASSWORD=mypassword \
+        -e WORDPRESS_DB_NAME=wordpress_export \
+        --publish 8080:80 \
+          wordpress 2>/dev/null
+    }
+
+    begin
+      Net::HTTP.get URI( "http://#{ arguments[:host] }" )
+    rescue
+      sleep 1
+      retry
+    end
+
+    visit "http://#{ arguments[:host] }/wp-admin/install.php?step=1"
+    fill_in :user_login, with: arguments[:user]
+    fill_in :"pass1-text", with: arguments[:password]
+    fill_in :admin_email, with: "test@test.com"
+    check :pw_weak
+    click_button "submit"
+
+    visit "http://#{ arguments[:host] }/wp-admin/import.php"
+    ( find "a[data-slug='wordpress-importer']" ).click
+
+    begin
+      ( find_link "Run Importer" ).click
+    rescue
+      sleep 1
+      retry
+    end
+
+    attach_file :upload, arguments[:import]
+    click_button :submit
+
+    check "import-attachments"
+    ( find "input[type='text']" ).set "importer"
+    ( find :css, "input.button" ).click
+
+    sleep 300
+  end
+
   desc "exports a wordpress site"
   task :export, [ :host, :user, :password ] => [ :init ] do | _, arguments |
     # spinup standalone container
